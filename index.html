@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice CAPTCHA</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap');
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --border: #1e1e2e;
+    --accent: #7fff6e;
+    --accent-dim: #4aad3e;
+    --danger: #ff4e4e;
+    --warn: #ffc84a;
+    --text: #e8e8f0;
+    --muted: #555570;
+    --glow: rgba(127, 255, 110, 0.15);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 60% 40% at 20% 80%, rgba(127,255,110,0.04) 0%, transparent 60%),
+      radial-gradient(ellipse 50% 50% at 80% 20%, rgba(127,255,110,0.03) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  .scanlines {
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .card {
+    position: relative;
+    z-index: 1;
+    width: 460px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 40px;
+    box-shadow:
+      0 0 0 1px rgba(127,255,110,0.05),
+      0 40px 80px rgba(0,0,0,0.6),
+      inset 0 1px 0 rgba(255,255,255,0.04);
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 36px;
+  }
+
+  .shield {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+  }
+
+  .header-text {
+    flex: 1;
+  }
+
+  .header-label {
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-family: 'Space Mono', monospace;
+    margin-bottom: 2px;
+  }
+
+  .header-title {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--text);
+    letter-spacing: -0.02em;
+  }
+
+  .step-indicator {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 32px;
+  }
+
+  .step-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: all 0.3s;
+  }
+
+  .step-dot.active { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .step-dot.done { background: var(--accent-dim); }
+
+  .instruction {
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 24px;
+    font-family: 'Space Mono', monospace;
+    line-height: 1.6;
+  }
+
+  .word-display {
+    position: relative;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 28px;
+    text-align: center;
+    margin-bottom: 28px;
+    overflow: hidden;
+  }
+
+  .word-display::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(127,255,110,0.03) 0%, transparent 60%);
+  }
+
+  .word-label {
+    font-size: 10px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+    margin-bottom: 14px;
+  }
+
+  .word {
+    font-size: 52px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    color: var(--text);
+    text-transform: uppercase;
+    position: relative;
+    /* distortion via CSS filter */
+    filter: drop-shadow(0 0 12px rgba(127,255,110,0.2));
+    user-select: none;
+    -webkit-user-select: none;
+    display: inline-block;
+  }
+
+  /* Slight skew distortion on letters to make OCR harder */
+  .word .w-letter {
+    display: inline-block;
+    animation: none;
+  }
+
+  .noise-overlay {
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='80' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E");
+    background-size: cover;
+    mix-blend-mode: overlay;
+    pointer-events: none;
+  }
+
+  /* Random lines across word */
+  .scratch-lines {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .new-word-btn {
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    cursor: pointer;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-top: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: color 0.2s;
+    padding: 0;
+  }
+
+  .new-word-btn:hover { color: var(--accent); }
+
+  .mic-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+
+  .mic-btn {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    background: var(--bg);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+    position: relative;
+    outline: none;
+  }
+
+  .mic-btn:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 20px var(--glow);
+    transform: scale(1.05);
+  }
+
+  .mic-btn.listening {
+    border-color: var(--accent);
+    box-shadow: 0 0 30px var(--glow), 0 0 60px rgba(127,255,110,0.08);
+    animation: pulse-ring 1.4s ease-out infinite;
+  }
+
+  .mic-btn.listening .mic-icon {
+    color: var(--accent);
+  }
+
+  @keyframes pulse-ring {
+    0% { box-shadow: 0 0 0 0 rgba(127,255,110,0.4), 0 0 20px var(--glow); }
+    70% { box-shadow: 0 0 0 16px rgba(127,255,110,0), 0 0 20px var(--glow); }
+    100% { box-shadow: 0 0 0 0 rgba(127,255,110,0), 0 0 20px var(--glow); }
+  }
+
+  .mic-icon {
+    color: var(--muted);
+    transition: color 0.25s;
+  }
+
+  .status-text {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+    min-height: 18px;
+    text-align: center;
+  }
+
+  .status-text.listening { color: var(--accent); }
+  .status-text.success { color: var(--accent); }
+  .status-text.error { color: var(--danger); }
+
+  .transcript-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 12px 16px;
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    color: var(--muted);
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    margin-bottom: 24px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.3s;
+  }
+
+  .transcript-box.has-text { color: var(--text); }
+  .transcript-box.match { border-color: var(--accent); box-shadow: 0 0 12px rgba(127,255,110,0.1); }
+  .transcript-box.no-match { border-color: var(--danger); }
+
+  .transcript-label {
+    position: absolute;
+    top: -8px;
+    left: 12px;
+    background: var(--surface);
+    padding: 0 4px;
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+  }
+
+  .verify-btn {
+    width: 100%;
+    padding: 16px;
+    background: transparent;
+    border: 1px solid var(--accent);
+    border-radius: 2px;
+    color: var(--accent);
+    font-family: 'Syne', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+    outline: none;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .verify-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--accent);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.25s ease;
+  }
+
+  .verify-btn:hover::before { transform: scaleX(1); }
+  .verify-btn:hover { color: var(--bg); }
+
+  .verify-btn span { position: relative; z-index: 1; }
+
+  .verify-btn:disabled {
+    border-color: var(--border);
+    color: var(--muted);
+    cursor: not-allowed;
+  }
+
+  .verify-btn:disabled::before { display: none; }
+
+  /* Result screens */
+  .result-screen {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 16px;
+    padding: 20px 0;
+  }
+
+  .result-screen.show { display: flex; }
+
+  .result-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+  }
+
+  .result-icon.success-icon { background: rgba(127,255,110,0.1); border: 1px solid var(--accent); }
+  .result-icon.fail-icon { background: rgba(255,78,78,0.1); border: 1px solid var(--danger); }
+
+  .result-title {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+
+  .result-title.success { color: var(--accent); }
+  .result-title.fail { color: var(--danger); }
+
+  .result-sub {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+
+  .retry-btn {
+    margin-top: 8px;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 10px 20px;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all 0.2s;
+  }
+
+  .retry-btn:hover { border-color: var(--text); color: var(--text); }
+
+  .attempts-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+
+  .attempts-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .attempt-pips {
+    display: flex;
+    gap: 5px;
+  }
+
+  .pip {
+    width: 8px;
+    height: 8px;
+    border-radius: 1px;
+    background: var(--border);
+    transition: all 0.3s;
+  }
+
+  .pip.used { background: var(--danger); }
+
+  .no-support {
+    background: rgba(255,78,78,0.08);
+    border: 1px solid rgba(255,78,78,0.3);
+    border-radius: 2px;
+    padding: 14px 16px;
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    color: var(--danger);
+    line-height: 1.6;
+    margin-bottom: 20px;
+    display: none;
+  }
+</style>
+</head>
+<body>
+<div class="scanlines"></div>
+
+<div class="card" id="mainCard">
+
+  <!-- Header -->
+  <div class="header">
+    <svg class="shield" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M16 2L4 7v9c0 7.18 5.15 13.89 12 15 6.85-1.11 12-7.82 12-15V7L16 2z" stroke="#7fff6e" stroke-width="1.5" fill="rgba(127,255,110,0.06)"/>
+      <path d="M11 16l3 3 7-7" stroke="#7fff6e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div class="header-text">
+      <div class="header-label">Security Check</div>
+      <div class="header-title">Voice CAPTCHA</div>
+    </div>
+  </div>
+
+  <!-- Steps -->
+  <div class="step-indicator">
+    <div class="step-dot active" id="dot1"></div>
+    <div class="step-dot" id="dot2"></div>
+    <div class="step-dot" id="dot3"></div>
+  </div>
+
+  <!-- Main CAPTCHA form -->
+  <div id="captchaForm">
+
+    <div class="instruction" id="instruction">
+      Speak the word displayed below clearly into your microphone. AI systems cannot hear — only humans can complete this challenge.
+    </div>
+
+    <div class="no-support" id="noSupport">
+      ⚠ Speech recognition is not supported in your browser. Please use Chrome or Edge.
+    </div>
+
+    <!-- Word display -->
+    <div class="word-display">
+      <div class="word-label">Say this word</div>
+      <div class="word" id="wordDisplay">
+        <span class="w-letter" id="letterContainer"></span>
+      </div>
+      <canvas class="scratch-lines" id="scratchCanvas" width="380" height="110"></canvas>
+      <div class="noise-overlay"></div>
+    </div>
+
+    <div style="display:flex;justify-content:center;margin-bottom:24px;">
+      <button class="new-word-btn" onclick="newWord()">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M10 6A4 4 0 1 1 6 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+          <path d="M6 0l2 2-2 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        New word
+      </button>
+    </div>
+
+    <!-- Mic -->
+    <div class="mic-section">
+      <button class="mic-btn" id="micBtn" onclick="toggleListen()">
+        <svg class="mic-icon" width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="10" y="3" width="8" height="14" rx="4" stroke="currentColor" stroke-width="1.8"/>
+          <path d="M5 14c0 4.97 4.03 9 9 9s9-4.03 9-9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          <line x1="14" y1="23" x2="14" y2="26" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          <line x1="10" y1="26" x2="18" y2="26" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <div class="status-text" id="statusText">Click microphone to begin</div>
+    </div>
+
+    <!-- Transcript -->
+    <div class="transcript-box" id="transcriptBox">
+      <span class="transcript-label">Heard</span>
+      <span id="transcriptText" style="color:var(--muted);font-style:italic;">awaiting speech...</span>
+    </div>
+
+    <!-- Verify -->
+    <button class="verify-btn" id="verifyBtn" onclick="verify()" disabled>
+      <span>Verify I'm Human</span>
+    </button>
+
+    <!-- Attempts -->
+    <div class="attempts-row">
+      <div class="attempts-label">Attempts remaining</div>
+      <div class="attempt-pips" id="pips"></div>
+    </div>
+
+  </div>
+
+  <!-- Success screen -->
+  <div class="result-screen" id="successScreen">
+    <div class="result-icon success-icon">✓</div>
+    <div class="result-title success">Human Verified</div>
+    <div class="result-sub">
+      Voice pattern recognized.<br>
+      Access granted — you are not a bot.
+    </div>
+    <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--accent);letter-spacing:0.15em;margin-top:8px;background:rgba(127,255,110,0.06);border:1px solid rgba(127,255,110,0.2);padding:10px 20px;border-radius:2px;">
+      TOKEN: HMN-<span id="tokenVal"></span>
+    </div>
+  </div>
+
+  <!-- Fail screen -->
+  <div class="result-screen" id="failScreen">
+    <div class="result-icon fail-icon">✕</div>
+    <div class="result-title fail">Verification Failed</div>
+    <div class="result-sub">
+      Too many incorrect attempts.<br>
+      Voice challenge could not be completed.
+    </div>
+    <button class="retry-btn" onclick="resetCaptcha()">↺ Try Again</button>
+  </div>
+
+</div>
+
+<script>
+  const WORD_LIST = [
+    'BRIDGE','CACTUS','DOLPHIN','EMBER','FABLE',
+    'GRAVEL','HARBOR','INSECT','JUNGLE','KERNEL',
+    'LEMON','MARBLE','NAPKIN','OYSTER','PEBBLE',
+    'QUARTZ','RIBBON','SOCKET','TIMBER','UPWARD',
+    'VELVET','WALRUS','XENON','YELLOW','ZIPPER',
+    'ANCHOR','BONSAI','COBALT','DAGGER','ELBOW',
+    'FALCON','GEYSER','HELMET','IGLOO','JESTER',
+    'KNIGHT','LANTERN','MITTEN','NOODLE','ORBIT',
+    'PARROT','QUINOA','RUSTIC','SADDLE','TALON',
+    'UMBRA','VORTEX','WIZARD','XYLEM','YOGURT'
+  ];
+
+  let currentWord = '';
+  let transcript = '';
+  let recognition = null;
+  let listening = false;
+  let attempts = 3;
+  let verified = false;
+
+  function init() {
+    renderPips();
+    newWord();
+    setupSpeech();
+  }
+
+  function renderPips() {
+    const pips = document.getElementById('pips');
+    pips.innerHTML = '';
+    for (let i = 0; i < 3; i++) {
+      const pip = document.createElement('div');
+      pip.className = 'pip' + (i >= attempts ? ' used' : '');
+      pips.appendChild(pip);
+    }
+  }
+
+  function newWord() {
+    currentWord = WORD_LIST[Math.floor(Math.random() * WORD_LIST.length)];
+    renderWord();
+    drawScratch();
+    resetTranscript();
+  }
+
+  function renderWord() {
+    const container = document.getElementById('letterContainer');
+    // Each letter gets slight random transform for visual distortion (harder for OCR)
+    container.innerHTML = currentWord.split('').map((ch, i) => {
+      const rotate = (Math.random() - 0.5) * 14;
+      const ty = (Math.random() - 0.5) * 8;
+      const scale = 0.88 + Math.random() * 0.24;
+      return `<span style="display:inline-block;transform:rotate(${rotate}deg) translateY(${ty}px) scaleX(${scale});letter-spacing:0.04em;">${ch}</span>`;
+    }).join('');
+  }
+
+  function drawScratch() {
+    const canvas = document.getElementById('scratchCanvas');
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = 'rgba(127,255,110,0.12)';
+    ctx.lineWidth = 1;
+    const count = 4 + Math.floor(Math.random() * 5);
+    for (let i = 0; i < count; i++) {
+      ctx.beginPath();
+      ctx.moveTo(Math.random() * canvas.width, Math.random() * canvas.height);
+      ctx.bezierCurveTo(
+        Math.random() * canvas.width, Math.random() * canvas.height,
+        Math.random() * canvas.width, Math.random() * canvas.height,
+        Math.random() * canvas.width, Math.random() * canvas.height
+      );
+      ctx.stroke();
+    }
+    // Noise dots
+    ctx.fillStyle = 'rgba(127,255,110,0.08)';
+    for (let i = 0; i < 80; i++) {
+      ctx.beginPath();
+      ctx.arc(Math.random() * canvas.width, Math.random() * canvas.height, 0.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function setupSpeech() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      document.getElementById('noSupport').style.display = 'block';
+      document.getElementById('micBtn').disabled = true;
+      return;
+    }
+    recognition = new SR();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onstart = () => {
+      listening = true;
+      const btn = document.getElementById('micBtn');
+      btn.classList.add('listening');
+      setStatus('Listening...', 'listening');
+    };
+
+    recognition.onresult = (e) => {
+      const results = Array.from(e.results);
+      const interim = results.map(r => r[0].transcript).join('').toUpperCase().trim();
+      transcript = interim;
+      updateTranscript(interim, false);
+    };
+
+    recognition.onend = () => {
+      listening = false;
+      const btn = document.getElementById('micBtn');
+      btn.classList.remove('listening');
+
+      if (transcript) {
+        setStatus('Speech captured', '');
+        updateTranscript(transcript, true);
+        document.getElementById('verifyBtn').disabled = false;
+      } else {
+        setStatus('Nothing detected — try again', 'error');
+      }
+    };
+
+    recognition.onerror = (e) => {
+      listening = false;
+      document.getElementById('micBtn').classList.remove('listening');
+      if (e.error === 'not-allowed') {
+        setStatus('Microphone access denied', 'error');
+      } else {
+        setStatus('Error: ' + e.error, 'error');
+      }
+    };
+  }
+
+  function toggleListen() {
+    if (!recognition) return;
+    if (listening) {
+      recognition.stop();
+    } else {
+      transcript = '';
+      document.getElementById('verifyBtn').disabled = true;
+      resetTranscript();
+      recognition.start();
+    }
+  }
+
+  function updateTranscript(text, final) {
+    const box = document.getElementById('transcriptBox');
+    const el = document.getElementById('transcriptText');
+    el.style.color = 'var(--text)';
+    el.style.fontStyle = 'normal';
+    el.textContent = text || 'awaiting speech...';
+    box.classList.toggle('has-text', !!text);
+  }
+
+  function resetTranscript() {
+    transcript = '';
+    const box = document.getElementById('transcriptBox');
+    const el = document.getElementById('transcriptText');
+    el.style.color = 'var(--muted)';
+    el.style.fontStyle = 'italic';
+    el.textContent = 'awaiting speech...';
+    box.classList.remove('match', 'no-match', 'has-text');
+    document.getElementById('verifyBtn').disabled = true;
+    setStatus('Click microphone to begin', '');
+  }
+
+  function setStatus(text, cls) {
+    const el = document.getElementById('statusText');
+    el.textContent = text;
+    el.className = 'status-text' + (cls ? ' ' + cls : '');
+  }
+
+  function normalize(str) {
+    return str.replace(/[^A-Z]/g, '').toUpperCase().trim();
+  }
+
+  function verify() {
+    const heard = normalize(transcript);
+    const expected = normalize(currentWord);
+    const box = document.getElementById('transcriptBox');
+
+    // Allow partial match: heard transcript may contain the word among other words
+    const heardWords = transcript.toUpperCase().replace(/[^A-Z ]/g, '').split(' ').map(w => w.trim()).filter(Boolean);
+    const isMatch = heardWords.some(w => w === expected) || heard === expected;
+
+    if (isMatch) {
+      box.classList.add('match');
+      setStatus('Match confirmed!', 'success');
+      // Update step dots
+      document.getElementById('dot1').classList.remove('active');
+      document.getElementById('dot1').classList.add('done');
+      document.getElementById('dot2').classList.add('active');
+      setTimeout(() => {
+        document.getElementById('dot2').classList.remove('active');
+        document.getElementById('dot2').classList.add('done');
+        document.getElementById('dot3').classList.add('active');
+        setTimeout(showSuccess, 400);
+      }, 500);
+    } else {
+      box.classList.add('no-match');
+      attempts--;
+      renderPips();
+      if (attempts <= 0) {
+        setTimeout(showFail, 600);
+      } else {
+        setStatus(`Incorrect — ${attempts} attempt${attempts !== 1 ? 's' : ''} left`, 'error');
+        setTimeout(() => {
+          box.classList.remove('no-match');
+          newWord();
+        }, 1200);
+      }
+    }
+  }
+
+  function showSuccess() {
+    document.getElementById('captchaForm').style.display = 'none';
+    document.getElementById('successScreen').classList.add('show');
+    document.getElementById('tokenVal').textContent = Math.random().toString(36).slice(2,10).toUpperCase();
+    document.getElementById('dot3').classList.remove('active');
+    document.getElementById('dot3').classList.add('done');
+  }
+
+  function showFail() {
+    document.getElementById('captchaForm').style.display = 'none';
+    document.getElementById('failScreen').classList.add('show');
+  }
+
+  function resetCaptcha() {
+    attempts = 3;
+    transcript = '';
+    document.getElementById('failScreen').classList.remove('show');
+    document.getElementById('successScreen').classList.remove('show');
+    document.getElementById('captchaForm').style.display = 'block';
+    document.getElementById('dot1').className = 'step-dot active';
+    document.getElementById('dot2').className = 'step-dot';
+    document.getElementById('dot3').className = 'step-dot';
+    renderPips();
+    newWord();
+  }
+
+  init();
+</script>
+</body>
+</html>
