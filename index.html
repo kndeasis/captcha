@@ -478,18 +478,6 @@
     font-weight: 300;
   }
 
-  .token-badge {
-    font-family: 'DM Mono', monospace;
-    font-size: 11px;
-    color: var(--success);
-    letter-spacing: 0.1em;
-    margin-top: 4px;
-    background: var(--success-bg);
-    border: 1px solid var(--success-border);
-    padding: 8px 16px;
-    border-radius: 4px;
-  }
-
   .retry-btn {
     margin-top: 4px;
     background: none;
@@ -632,7 +620,6 @@
     <div class="result-icon success-icon">✓</div>
     <div class="result-title success">Verified</div>
     <div class="result-sub">Voice pattern recognized.<br>You're not a bot.</div>
-    <div class="token-badge">TOKEN: HMN-<span id="tokenVal"></span></div>
   </div>
 
   <!-- Fail -->
@@ -912,7 +899,6 @@
   function showSuccess() {
     document.getElementById('captchaForm').style.display = 'none';
     document.getElementById('successScreen').classList.add('show');
-    document.getElementById('tokenVal').textContent = Math.random().toString(36).slice(2, 10).toUpperCase();
     document.getElementById('dot3').classList.replace('active', 'done');
   }
 
