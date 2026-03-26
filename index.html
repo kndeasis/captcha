@@ -38,6 +38,58 @@
     justify-content: center;
   }
 
+  /* ── Intro ── */
+  .intro-card {
+    max-width: 520px;
+    gap: 18px;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    border: 1px solid var(--border);
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+  }
+
+  .intro-title {
+    font-size: 28px;
+    letter-spacing: -0.02em;
+    margin-bottom: 12px;
+  }
+
+  .intro-copy {
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.7;
+    margin-bottom: 18px;
+  }
+
+  .intro-steps { display: flex; flex-direction: column; gap: 12px; margin-bottom: 22px; }
+
+  .intro-step { display: flex; gap: 12px; }
+
+  .intro-step .dot {
+    width: 9px;
+    height: 9px;
+    background: var(--accent);
+    border-radius: 50%;
+    margin-top: 6px;
+    flex-shrink: 0;
+  }
+
+  .step-title { font-weight: 500; font-size: 14px; }
+  .step-sub { color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
+
+  .intro-btn { margin-top: 4px; }
+
   .card {
     width: 420px;
     background: var(--surface);
@@ -457,7 +509,40 @@
 </head>
 <body>
 
-<div class="card" id="mainCard">
+<!-- Intro screen -->
+<div class="card intro-card" id="introScreen">
+  <div class="badge">Step 1 of 2</div>
+  <h1 class="intro-title">Verify with your voice</h1>
+  <p class="intro-copy">We use a short voice CAPTCHA to keep bots out. You’ll be asked to read a quick word aloud — it only takes a few seconds.</p>
+
+  <div class="intro-steps">
+    <div class="intro-step">
+      <span class="dot"></span>
+      <div>
+        <div class="step-title">See a word</div>
+        <div class="step-sub">We flash a randomized word with light scratch lines.</div>
+      </div>
+    </div>
+    <div class="intro-step">
+      <span class="dot"></span>
+      <div>
+        <div class="step-title">Say it out loud</div>
+        <div class="step-sub">Tap the mic and read the word clearly into your device.</div>
+      </div>
+    </div>
+    <div class="intro-step">
+      <span class="dot"></span>
+      <div>
+        <div class="step-title">Get verified</div>
+        <div class="step-sub">We compare what you said to the word shown. Three tries.</div>
+      </div>
+    </div>
+  </div>
+
+  <button class="verify-btn intro-btn" onclick="beginVerification()">Begin voice check</button>
+</div>
+
+<div class="card" id="mainCard" style="display:none;" tabindex="-1">
 
   <!-- Header -->
   <div class="header">
@@ -601,7 +686,6 @@
   function init() {
     shuffleDeck();
     renderPips();
-    newWord();
     updateRewordButton();
     setupSpeech();
   }
@@ -835,6 +919,13 @@
   function showFail() {
     document.getElementById('captchaForm').style.display = 'none';
     document.getElementById('failScreen').classList.add('show');
+  }
+
+  function beginVerification() {
+    document.getElementById('introScreen').style.display = 'none';
+    document.getElementById('mainCard').style.display = 'block';
+    newWord();
+    document.getElementById('mainCard').focus({ preventScroll: true });
   }
 
   function resetCaptcha() {
